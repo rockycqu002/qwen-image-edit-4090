@@ -15,8 +15,10 @@ ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 PIP_DIS
     PATH=/opt/venv/bin:$PATH HF_HUB_DISABLE_TELEMETRY=1 HF_HUB_DISABLE_PROGRESS_BARS=1 \
     COMFY_DIR=/app/ComfyUI RUNPOD_LOG_LEVEL=WARN
 
+# gcc + libc6-dev + python3.12-dev: Triton JIT-compiles the int8 / SageAttention kernels at runtime and needs a C compiler
+# and Python.h ("Failed to find C compiler" killed every worker on the -base image without them).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        python3.12 python3.12-venv git tini ca-certificates curl libgl1 libglib2.0-0t64 \
+        python3.12 python3.12-venv python3.12-dev gcc libc6-dev git tini ca-certificates curl libgl1 libglib2.0-0t64 \
     && rm -rf /var/lib/apt/lists/* \
     && python3.12 -m venv /opt/venv && pip install "pip==25.3"
 
