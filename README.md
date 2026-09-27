@@ -35,6 +35,11 @@ git tag v0.1.0 && git push --tags      # GitHub Actions builds (~30–40 min) an
 ```
 The workflow summary shows the image digest, the model manifest and the lock file.
 
+A package first published from Actions is **private**. Either make it public once (GitHub → Packages →
+`qwen-image-edit-4090` → Package settings → Change visibility) or register a GHCR pull credential in RunPod
+(Credentials → Container Registry Auth) and pass its id to `deploy/runpod_api.py create --registry-auth <id>`.
+Use the digest-pinned reference `ghcr.io/<owner>/qwen-image-edit-4090:v0.1.0@sha256:...` for the template.
+
 ## Endpoint settings (RunPod)
 
 Queue-based · GPU `NVIDIA GeForce RTX 4090` only (pool ADA_24, minCudaVersion 13.0) · 1 GPU/worker ·

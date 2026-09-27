@@ -10,7 +10,9 @@ returns {"image": <JPEG q95 base64>, "info": {...}} or {"error": "..."} (which R
 
 ComfyUI runs as a child process; its three model files are loaded once at worker start (warm-up) and reused.
 """
-import atexit, base64, binascii, io, json, os, secrets, signal, subprocess, sys, threading, time, traceback, uuid, urllib.error, urllib.parse, urllib.request
+import atexit, base64, binascii, glob, io, json, os, secrets, signal, subprocess, sys, threading, time, traceback, uuid, urllib.error, urllib.parse, urllib.request
+
+os.environ.setdefault("RUNPOD_LOG_LEVEL", "WARN")   # the SDK would otherwise log job payloads (base64) at DEBUG/INFO
 
 from PIL import Image, ImageOps
 
@@ -41,8 +43,16 @@ def log(msg, **kv):
 
 def comfy(path, data=None, headers=None, raw=False, timeout=60):
     req = urllib.request.Request(COMFY_URL + path, data=data, headers=headers or {})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        body = r.read()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            body = r.read()
+    except urllib.error.HTTPError as e:
+        body = e.read()
+        try:
+            payload = json.loads(body)
+        except Exception:
+            payload = {"error": body[:600].decode(errors="replace")}
+        raise RuntimeError(f"ComfyUI HTTP {e.code}: " + json.dumps(payload.get("node_errors") or payload.get("error") or payload, ensure_ascii=False)[:700])
     if raw:
         return body
     return json.loads(body) if body.strip() else {}
@@ -63,12 +73,14 @@ def start_comfy():
     global _proc, _log_fh
     for d in (IN_DIR, OUT_DIR, TMP_DIR):
         os.makedirs(d, exist_ok=True)
+    first = _log_fh is None
     _log_fh = open("/tmp/comfy.log", "a")
     cmd = [sys.executable, "main.py", "--listen", "127.0.0.1", "--port", "8188", "--use-sage-attention", "--disable-auto-launch",
            "--dont-print-server", "--disable-metadata", "--input-directory", IN_DIR, "--output-directory", OUT_DIR, "--temp-directory", TMP_DIR,
            "--extra-model-paths-config", os.path.join(COMFY_DIR, "extra_model_paths.yaml")]
     _proc = subprocess.Popen(cmd, cwd=COMFY_DIR, stdout=_log_fh, stderr=subprocess.STDOUT, start_new_session=True)
-    threading.Thread(target=_tail_log, args=(_log_fh,), daemon=True).start()
+    if first:
+        threading.Thread(target=_tail_log, args=(_log_fh,), daemon=True).start()
     t0 = time.time()
     while time.time() - t0 < 300:
         if _proc.poll() is not None:
@@ -165,12 +177,14 @@ def decode_image(field, b64, index):
     if not fmt:
         raise BadInput(f"{field} 不是 JPEG / PNG / WebP")
     try:
-        im = Image.open(io.BytesIO(blob))
+        im = Image.open(io.BytesIO(blob))            # header only; the pixel guard runs before decoding
+        if im.width * im.height > MAX_PIXELS:
+            raise BadInput(f"{field} 像素数 {im.width}x{im.height} 超过上限")
         im.load()                                     # first frame only for animated WebP/APNG
+    except BadInput:
+        raise
     except Exception as e:
         raise BadInput(f"{field} 无法解码: {type(e).__name__}")
-    if im.width * im.height > MAX_PIXELS:
-        raise BadInput(f"{field} 像素数 {im.width}x{im.height} 超过上限")
     im = ImageOps.exif_transpose(im)
     if im.mode in ("RGBA", "LA", "PA") or (im.mode == "P" and "transparency" in im.info):
         im = im.convert("RGBA")
@@ -184,9 +198,11 @@ def clamp_int(v, name, default):
     if v is None or v == "":
         return default
     try:
-        v = int(float(v))
+        v = int(v) if not isinstance(v, float) else int(v)
+        if isinstance(v, bool):
+            raise ValueError
     except (TypeError, ValueError):
-        raise BadInput(f"{name} 不是数字")
+        raise BadInput(f"{name} 不是整数")
     lo, hi = LIMITS[name]
     if not (lo <= v <= hi):
         raise BadInput(f"{name}={v} 超出允许范围 {lo}–{hi}")
@@ -199,14 +215,17 @@ def parse_job(inp):
     prompt = inp.get("prompt")
     if not isinstance(prompt, str) or not prompt.strip():
         raise BadInput("prompt 缺失")
+    refs = inp.get("ref_images") or []
+    if not isinstance(refs, list):
+        raise BadInput("ref_images 必须是数组")
+    fields = [("image", inp.get("image"))] + ([("ref_image", inp["ref_image"])] if inp.get("ref_image") not in (None, "") else []) + \
+             [(f"ref_images[{i}]", v) for i, v in enumerate(refs) if v not in (None, "")]
+    if len(fields) > MAX_IMAGES:
+        raise BadInput(f"参考图最多 {MAX_IMAGES} 张（含 image）")
     images, metas = [], []
-    for field, val in [("image", inp.get("image")), ("ref_image", inp.get("ref_image"))] + \
-                      [(f"ref_images[{i}]", v) for i, v in enumerate(inp.get("ref_images") or [])]:
-        if field == "image" or val not in (None, ""):
-            im, meta = decode_image(field, val, len(images) + 1)
-            images.append(im); metas.append(meta)
-    if len(images) > MAX_IMAGES:
-        raise BadInput(f"参考图最多 {MAX_IMAGES} 张")
+    for field, val in fields:
+        im, meta = decode_image(field, val, len(images) + 1)
+        images.append(im); metas.append(meta)
     steps = clamp_int(inp.get("steps"), "steps", DEFAULTS["steps"])
     resolution = clamp_int(inp.get("resolution"), "resolution", DEFAULTS["resolution"])
     resolution -= resolution % 32
@@ -244,7 +263,9 @@ def run_graph(graph, deadline_s):
         if pid in h:
             break
         if time.time() - t0 > deadline_s:
-            try: comfy("/interrupt", b"", {"Content-Type": "application/json"}, raw=True)
+            try:
+                comfy("/queue", json.dumps({"delete": [pid]}).encode(), {"Content-Type": "application/json"}, raw=True)
+                comfy("/interrupt", b"", {"Content-Type": "application/json"}, raw=True)
             except Exception: pass
             raise RuntimeError(f"推理超过 {deadline_s:.0f} s，已中断")
         time.sleep(0.1)
@@ -263,7 +284,7 @@ def run_graph(graph, deadline_s):
 
 def encode_jpeg(im):
     for q in JPEG_QUALITIES:
-        buf = io.BytesIO(); im.save(buf, format="JPEG", quality=q, optimize=True, subsampling=0 if q >= 95 else 1)
+        buf = io.BytesIO(); im.save(buf, format="JPEG", quality=q, subsampling=0 if q >= 95 else 1)
         b64 = base64.b64encode(buf.getvalue()).decode()
         if len(b64) <= MAX_RETURN_BYTES:
             return b64, q, len(buf.getvalue())
@@ -285,9 +306,11 @@ def _synthetic(w, h):
 
 def warmup():
     t0 = time.time()
-    for (w, h) in ((1024, 1024), (1152, 864)):
+    prompts = ("Keep the image exactly as it is.",
+               "Keep the image exactly as it is, preserving every object, colour, texture and the overall composition of the scene.")
+    for (w, h), prompt in zip(((1024, 1024), (1152, 864)), prompts):
         name = f"warmup_{w}x{h}.png"; _synthetic(w, h).save(os.path.join(IN_DIR, name))
-        p = {"prompt": "Keep the image exactly as it is.", "steps": 4, "resolution": 1024, "seed": 1}
+        p = {"prompt": prompt, "steps": 4, "resolution": 1024, "seed": 1}
         path, _ = run_graph(build_graph(p, [name], f"warmup/{w}x{h}"), 240)
         os.remove(path); os.remove(os.path.join(IN_DIR, name))
     log("warmup done", seconds=round(time.time() - t0, 1), vram_used_mib=vram_used_mib(), rss_mib=rss_mib())
@@ -306,8 +329,8 @@ def handler(job):
     try:
         p = parse_job(job.get("input"))
         if not comfy_alive():
-            log("comfyui not alive, restarting", job=jid)
-            stop_comfy(); start_comfy()
+            log("comfyui not alive; failing job and asking RunPod to replace this worker", job=jid, error_type="ComfyDead")
+            return {"error": "inference backend unavailable, worker is being replaced", "refresh_worker": True}
         for i, im in enumerate(p["images"], 1):
             fn = f"{jid}_{i}.png"; im.save(os.path.join(IN_DIR, fn), format="PNG", compress_level=1); paths.append(os.path.join(IN_DIR, fn))
         graph = build_graph(p, [os.path.basename(x) for x in paths], f"job/{jid}")
@@ -320,8 +343,9 @@ def handler(job):
         _state["jobs"] += 1
         info = {"model": "qwen-image-2.1-int8-convrot", "seed": p["seed"], "steps": p["steps"], "resolution": p["resolution"],
                 "width": out.width, "height": out.height, "n_images": len(p["images"]), "jpeg_quality": q, "output_bytes": nbytes,
-                "exec_ms": int((time.time() - t_start) * 1000), "infer_ms": int(infer_s * 1000), "gpu": (_state["gpu"] or {}).get("gpu")}
-        log("job ok", job=jid, **{k: v for k, v in info.items() if k != "model"}, inputs=p["image_meta"], vram_used_mib=vram_used_mib(), rss_mib=rss_mib())
+                "exec_ms": int((time.time() - t_start) * 1000), "infer_ms": int(infer_s * 1000), "gpu": (_state["gpu"] or {}).get("gpu"),
+                "vram_used_mib": vram_used_mib(), "rss_mib": rss_mib(), "worker_jobs": _state["jobs"], "init_s": _state["init_s"]}
+        log("job ok", job=jid, **{k: v for k, v in info.items() if k != "model"}, inputs=p["image_meta"])
         return {"image": b64, "info": info}
     except BadInput as e:
         log("job rejected", job=jid, error=str(e), error_type="BadInput")
@@ -329,13 +353,10 @@ def handler(job):
     except Exception as e:
         log("job failed", job=jid, error=str(e)[:800], error_type=type(e).__name__, tb=traceback.format_exc()[-1500:])
         if not comfy_alive():
-            try:
-                stop_comfy(); start_comfy()
-            except Exception as e2:
-                log("comfyui restart failed, exiting worker", error=repr(e2)); os._exit(1)
+            return {"error": f"{type(e).__name__}: {str(e)[:600]}", "refresh_worker": True}
         return {"error": f"{type(e).__name__}: {str(e)[:600]}"}
     finally:
-        _cleanup(paths)
+        _cleanup(paths + glob.glob(os.path.join(OUT_DIR, "job", f"{jid}*")))
 
 
 def main():

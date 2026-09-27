@@ -38,7 +38,8 @@ def call(method, path, body=None):
 def create(a):
     env = {"QIE_STEPS": str(a.steps), "QIE_RESOLUTION": str(a.resolution), "QIE_LOG_LEVEL": "INFO"}
     tpl = call("POST", "/templates", {"name": a.name, "imageName": a.image, "isServerless": True, "containerDiskInGb": a.disk,
-                                      "env": env, "category": "NVIDIA", **({"containerRegistryAuthId": a.registry_auth} if a.registry_auth else {})})
+                                      "volumeInGb": 0, "ports": [], "env": env, "category": "NVIDIA",
+                                      **({"containerRegistryAuthId": a.registry_auth} if a.registry_auth else {})})
     print("template:", json.dumps({k: tpl.get(k) for k in ("id", "name", "imageName", "containerDiskInGb", "env")}, ensure_ascii=False))
     ep = call("POST", "/endpoints", {
         "templateId": tpl["id"], "name": a.name, "computeType": "GPU", "gpuTypeIds": [GPU], "gpuCount": 1,
@@ -54,24 +55,32 @@ def show(a):
     keep = ("id", "name", "templateId", "gpuTypeIds", "gpuCount", "minCudaVersion", "allowedCudaVersions", "dataCenterIds", "workersMin", "workersMax",
             "idleTimeout", "executionTimeoutMs", "flashboot", "scalerType", "scalerValue", "computeType", "networkVolumeId", "createdAt")
     print(json.dumps({k: ep.get(k) for k in keep}, ensure_ascii=False, indent=1))
+    print("note: 'flashboot' is write-only in the REST schema; confirm it in the console (Edit endpoint → Enable FlashBoot)")
     if ep.get("templateId"):
         tpl = call("GET", f"/templates/{ep['templateId']}")
         print("template:", json.dumps({k: tpl.get(k) for k in ("id", "name", "imageName", "containerDiskInGb", "env", "isServerless")}, ensure_ascii=False, indent=1))
 
 
 def update(a):
-    if a.endpoint == OLD_ENDPOINT:
+    if a.endpoint.strip() == OLD_ENDPOINT:
         sys.exit("refusing to modify the production endpoint")
     body = {}
     if a.max_workers is not None: body["workersMax"] = a.max_workers
     if a.min_workers is not None: body["workersMin"] = a.min_workers
     if a.timeout_ms is not None: body["executionTimeoutMs"] = a.timeout_ms
-    print(json.dumps(call("PATCH", f"/endpoints/{a.endpoint}", body), ensure_ascii=False, indent=1))
+    if not body:
+        sys.exit("nothing to update (an empty update would still trigger a rolling release)")
+    print(json.dumps(call("PATCH", f"/endpoints/{a.endpoint}", body), ensure_ascii=False, indent=1))   # PATCH = in-place update
     show(a)
 
 
 def billing(a):
-    print(json.dumps(call("GET", f"/billing/endpoints?endpointId={a.endpoint}&days={a.days}"), ensure_ascii=False, indent=1)[:4000])
+    """Per-endpoint billing buckets (worker seconds & cost); parameters per the v1 OpenAPI: startTime/endTime ISO-8601, bucketSize."""
+    import datetime, urllib.parse
+    end = datetime.datetime.now(datetime.timezone.utc); start = end - datetime.timedelta(days=a.days)
+    q = urllib.parse.urlencode({"endpointId": a.endpoint, "startTime": start.isoformat(timespec="seconds").replace("+00:00", "Z"),
+                                "endTime": end.isoformat(timespec="seconds").replace("+00:00", "Z"), "bucketSize": a.bucket})
+    print(json.dumps(call("GET", f"/billing/endpoints?{q}"), ensure_ascii=False, indent=1)[:6000])
 
 
 def main():
@@ -82,7 +91,8 @@ def main():
     s = sub.add_parser("show"); s.add_argument("--endpoint", required=True); s.set_defaults(fn=show)
     u = sub.add_parser("update"); u.add_argument("--endpoint", required=True); u.add_argument("--max-workers", type=int); u.add_argument("--min-workers", type=int)
     u.add_argument("--timeout-ms", type=int); u.set_defaults(fn=update)
-    b = sub.add_parser("billing"); b.add_argument("--endpoint", required=True); b.add_argument("--days", type=int, default=1); b.set_defaults(fn=billing)
+    b = sub.add_parser("billing"); b.add_argument("--endpoint", required=True); b.add_argument("--days", type=int, default=1)
+    b.add_argument("--bucket", default="hour", choices=["hour", "day", "week", "month"]); b.set_defaults(fn=billing)
     a = p.parse_args(); a.fn(a)
 
 
