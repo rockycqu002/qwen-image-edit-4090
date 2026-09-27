@@ -56,6 +56,11 @@ assert torch.version.cuda.startswith("13."), torch.version.cuda
 import json; mf = json.load(open("/models/MANIFEST.json")); assert len(mf["files"]) == 3, mf
 EOF
 
+# last, so a new tag only rebuilds this layer: image tag echoed in info.build; QIE_COMFY_ARGS = extra ComfyUI flags
+# (override per template release, e.g. "--disable-dynamic-vram")
+ARG BUILD_REF=dev
+ENV QIE_BUILD=${BUILD_REF} QIE_COMFY_ARGS=""
+
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["python", "/app/src/handler.py"]
 

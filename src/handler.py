@@ -10,7 +10,7 @@ returns {"image": <JPEG q95 base64>, "info": {...}} or {"error": "..."} (which R
 
 ComfyUI runs as a child process; its three model files are loaded once at worker start (warm-up) and reused.
 """
-import atexit, base64, binascii, glob, io, json, os, secrets, signal, subprocess, sys, threading, time, traceback, uuid, urllib.error, urllib.parse, urllib.request
+import atexit, base64, binascii, glob, io, json, os, secrets, shlex, signal, subprocess, sys, threading, time, traceback, uuid, urllib.error, urllib.parse, urllib.request
 
 os.environ.setdefault("RUNPOD_LOG_LEVEL", "WARN")   # the SDK would otherwise log job payloads (base64) at DEBUG/INFO
 
@@ -28,6 +28,8 @@ MAX_IMAGES = 6                           # Picture 1..6
 MAX_RETURN_BYTES = int(9.5 * 1024 * 1024)  # RunPod /run result limit is 10 MB including JSON
 JPEG_QUALITIES = (95, 90, 85)
 JOB_DEADLINE_S = float(os.environ.get("QIE_JOB_DEADLINE_S", 55))  # stay under the 60 s endpoint executionTimeout
+COMFY_EXTRA_ARGS = shlex.split(os.environ.get("QIE_COMFY_ARGS", ""))  # e.g. "--disable-dynamic-vram"; settable per template release without a rebuild
+BUILD = os.environ.get("QIE_BUILD", "dev")                            # image tag baked in by the workflow, echoed in info.build
 MAGIC = {b"\xff\xd8\xff": "jpeg", b"\x89PNG\r\n\x1a\n": "png", b"RIFF": "webp"}
 
 _proc = None
@@ -77,7 +79,7 @@ def start_comfy():
     _log_fh = open("/tmp/comfy.log", "a")
     cmd = [sys.executable, "main.py", "--listen", "127.0.0.1", "--port", "8188", "--use-sage-attention", "--disable-auto-launch",
            "--dont-print-server", "--disable-metadata", "--input-directory", IN_DIR, "--output-directory", OUT_DIR, "--temp-directory", TMP_DIR,
-           "--extra-model-paths-config", os.path.join(COMFY_DIR, "extra_model_paths.yaml")]
+           "--extra-model-paths-config", os.path.join(COMFY_DIR, "extra_model_paths.yaml")] + COMFY_EXTRA_ARGS
     _proc = subprocess.Popen(cmd, cwd=COMFY_DIR, stdout=_log_fh, stderr=subprocess.STDOUT, start_new_session=True)
     if first:
         threading.Thread(target=_tail_log, args=(_log_fh,), daemon=True).start()
@@ -344,7 +346,8 @@ def handler(job):
         info = {"model": "qwen-image-2.1-int8-convrot", "seed": p["seed"], "steps": p["steps"], "resolution": p["resolution"],
                 "width": out.width, "height": out.height, "n_images": len(p["images"]), "jpeg_quality": q, "output_bytes": nbytes,
                 "exec_ms": int((time.time() - t_start) * 1000), "infer_ms": int(infer_s * 1000), "gpu": (_state["gpu"] or {}).get("gpu"),
-                "vram_used_mib": vram_used_mib(), "rss_mib": rss_mib(), "worker_jobs": _state["jobs"], "init_s": _state["init_s"]}
+                "vram_used_mib": vram_used_mib(), "rss_mib": rss_mib(), "worker_jobs": _state["jobs"], "init_s": _state["init_s"],
+                "build": BUILD, "comfy_args": " ".join(COMFY_EXTRA_ARGS)}
         log("job ok", job=jid, **{k: v for k, v in info.items() if k != "model"}, inputs=p["image_meta"])
         return {"image": b64, "info": info}
     except BadInput as e:

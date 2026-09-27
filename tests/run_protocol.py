@@ -137,7 +137,7 @@ def main():
             time.sleep(0.5)
         c = rp.cancel(a.endpoint, sub["id"]); doc = rp.wait(a.endpoint, sub["id"])
         rows.append({"case": "cancel_while_running", "expect": "CANCELLED", **rp.summarize(doc), "ok": doc.get("status") == "CANCELLED", "cancel_response": json.dumps(c)[:120]}); print(rows[-1], flush=True)
-    record("after_cancel_still_serving", ["COMPLETED"], {"image": b64(enc(scene(1024, 768)), "JPEG"), "prompt": PROMPT})
+    record("after_cancel_still_serving", ["COMPLETED"], {"image": b64(enc(scene(1024, 768), "JPEG")), "prompt": PROMPT})
 
     keys = sorted({k for r in rows for k in r})
     with open(a.out, "w", newline="") as f:

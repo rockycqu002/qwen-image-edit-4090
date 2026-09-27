@@ -60,6 +60,8 @@ jobs:
         with:
           context: .
           target: runtime
+          build-args: |
+            BUILD_REF=${{ steps.name.outputs.tag }}
           push: true
           provenance: false
           sbom: false
