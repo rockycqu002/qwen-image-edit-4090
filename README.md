@@ -44,7 +44,12 @@ Use the digest-pinned reference for the template, e.g. `ghcr.io/rockycqu002/qwen
 
 Queue-based · GPU `NVIDIA GeForce RTX 4090` only (pool ADA_24, minCudaVersion 13.0) · 1 GPU/worker ·
 workersMin 0 · idleTimeout 5 s · scaler REQUEST_COUNT/1 · FlashBoot on · executionTimeout 60 s ·
-env `QIE_STEPS=20 QIE_RESOLUTION=1024` · **container disk 50 GB**.
+env `QIE_STEPS=20 QIE_RESOLUTION=1024 QIE_COMFY_ARGS=--disable-nvml-pressure` · **container disk 50 GB**.
+
+`QIE_COMFY_ARGS` is appended to the ComfyUI command line (settable per template release, no rebuild). ComfyUI 0.37 enables
+DynamicVRAM (comfy-aimdo) on these hosts; with its default NVML pressure probe 7 of 30 hot jobs on two of three 4090 hosts
+took 15–50 s instead of 7.8 s. `--disable-nvml-pressure` (CUDA-based probe) kept the 7.7 s median with zero outliers over
+30 jobs; `--disable-dynamic-vram` was also stable but ~2 s slower per image (see `results/TEST_REPORT.md` §6.0).
 
 The container disk must hold the *uncompressed* image (~28 GB) plus `/tmp` scratch. With the 20 GB default every
 worker pulled the image, logged `start container` and died without a single line of container output (worker
