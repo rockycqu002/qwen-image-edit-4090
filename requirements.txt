@@ -1,0 +1,6 @@
+# worker-side packages on top of ComfyUI's own requirements (versions frozen by constraints.txt where present)
+runpod==1.12.0
+sageattention==1.0.6
+huggingface_hub
+pillow
+requests
