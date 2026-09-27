@@ -49,7 +49,9 @@ env `QIE_STEPS=20 QIE_RESOLUTION=1024 QIE_COMFY_ARGS=--disable-nvml-pressure` ·
 `QIE_COMFY_ARGS` is appended to the ComfyUI command line (settable per template release, no rebuild). ComfyUI 0.37 enables
 DynamicVRAM (comfy-aimdo) on these hosts; with its default NVML pressure probe 7 of 30 hot jobs on two of three 4090 hosts
 took 15–50 s instead of 7.8 s. `--disable-nvml-pressure` (CUDA-based probe) kept the 7.7 s median with zero outliers over
-30 jobs; `--disable-dynamic-vram` was also stable but ~2 s slower per image (see `results/TEST_REPORT.md` §6.0).
+30 jobs; a later control run with the defaults on a different set of hosts was clean too, so the jitter is host-dependent and
+the flag is a defensive choice at no cost. `--disable-dynamic-vram` is the fallback if jitter ever reappears: stable but
+~2 s slower per image. Both are switchable through the template env without a rebuild (see `results/TEST_REPORT.md` §6.0).
 
 The container disk must hold the *uncompressed* image (~28 GB) plus `/tmp` scratch. With the 20 GB default every
 worker pulled the image, logged `start container` and died without a single line of container output (worker
