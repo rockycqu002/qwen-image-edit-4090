@@ -14,8 +14,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 300
     steps:
-      # ~28 GB image (17.3 GB of weights) → BuildKit needs ~55 GB peak (snapshots + compressed blobs for the push).
-      # Merge the runner's spare /mnt disk into the docker data root before anything else touches it.
+      # ~28 GB image (17.3 GB of weights). Merge the runner's spare /mnt disk into the docker data root first, and
+      # build with the daemon's own BuildKit ("docker" driver): layers live once in overlay2 and `docker push`
+      # streams the compressed blobs instead of staging a second ~22 GB copy (the docker-container driver ran out
+      # of space doing exactly that).
       - name: Maximize build space
         uses: easimon/maximize-build-space@v10
         with:
@@ -29,7 +31,10 @@ jobs:
           remove-docker-images: "true"
           build-mount-path: /var/lib/docker
       - name: Restart docker on the enlarged data root
-        run: sudo systemctl restart docker && df -h / /var/lib/docker
+        run: |
+          sudo systemctl restart docker
+          { echo "## Disk before build"; echo '```'; df -h / /var/lib/docker; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          df -h / /var/lib/docker
 
       - uses: actions/checkout@v4
 
@@ -41,6 +46,8 @@ jobs:
           else echo "tag=dev-$(echo '${{ github.sha }}' | cut -c1-7)" >> "$GITHUB_OUTPUT"; fi
 
       - uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -62,14 +69,20 @@ jobs:
           cache-from: type=registry,ref=${{ steps.name.outputs.image }}:latest
           cache-to: type=inline
 
-      - name: Extract lock file and model manifest
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          target: artifacts
-          provenance: false
-          sbom: false
-          outputs: type=local,dest=./out
+      - name: Disk after build
+        if: always()
+        run: |
+          { echo "## Disk after build"; echo '```'; df -h / /var/lib/docker; docker system df; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          df -h / /var/lib/docker; docker system df
+
+      - name: Extract lock file and model manifest (image is in the local daemon with the docker driver)
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          IMG="${{ steps.name.outputs.image }}:${{ steps.name.outputs.tag }}"
+          docker run --rm --entrypoint cat "$IMG" /app/requirements.lock > out/requirements.lock
+          docker run --rm --entrypoint cat "$IMG" /models/MANIFEST.json > out/MANIFEST.json
+          docker run --rm --entrypoint python "$IMG" -c "import torch, importlib.metadata as m; print('torch', torch.__version__, torch.version.cuda, 'sage', m.version('sageattention'), 'kitchen', m.version('comfy-kitchen'), 'runpod', m.version('runpod'))" | tee out/versions.txt
 
       - name: Verify pushed image and write summary
         run: |
@@ -77,22 +90,24 @@ jobs:
           IMG="${{ steps.name.outputs.image }}@${{ steps.build.outputs.digest }}"
           docker buildx imagetools inspect "$IMG" --format '{{json .Manifest}}' > manifest.json
           LAYERS=$(python3 -c "import json;print(len(json.load(open('manifest.json'))['layers']))")
-          echo "layers: $LAYERS"; test "$LAYERS" -ge 8
           BIG=$(python3 -c "import json;print(max(l['size'] for l in json.load(open('manifest.json'))['layers']))")
-          echo "largest layer bytes: $BIG"; test "$BIG" -lt 10000000000
-          df -h / /var/lib/docker
+          TOTAL=$(python3 -c "import json;print(sum(l['size'] for l in json.load(open('manifest.json'))['layers']))")
+          echo "layers: $LAYERS largest: $BIG total: $TOTAL"; test "$LAYERS" -ge 8; test "$BIG" -lt 10000000000
           {
             echo "## Image"; echo '```'
             echo "${{ steps.name.outputs.image }}:${{ steps.name.outputs.tag }}"
             echo "digest: ${{ steps.build.outputs.digest }}"
-            echo "layers: $LAYERS, largest layer: $BIG bytes"; echo '```'
+            echo "layers: $LAYERS, largest layer: $BIG bytes, total compressed: $TOTAL bytes"
+            cat out/versions.txt; echo '```'
             echo "## Model manifest"; echo '```'; cat out/MANIFEST.json; echo '```'
             echo "## requirements.lock"; echo '```'; cat out/requirements.lock; echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: image-artifacts-${{ steps.name.outputs.tag }}
           path: |
             out/
             manifest.json
+          if-no-files-found: ignore

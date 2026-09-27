@@ -1,0 +1,42 @@
+[
+ {
+  "name": "e1_recolor",
+  "image": "tests/data/ts_mug.png",
+  "prompt": "Change the mug to matte dark green with a black handle. Keep everything else exactly the same."
+ },
+ {
+  "name": "e2_material",
+  "image": "tests/data/ts_mug.png",
+  "prompt": "Replace the wooden table with a white marble countertop. Keep the mug and lighting unchanged."
+ },
+ {
+  "name": "e3_remove",
+  "image": "tests/data/ts_raincoat.png",
+  "prompt": "Remove the umbrella. Keep the woman, her pose and the background unchanged."
+ },
+ {
+  "name": "e4_style",
+  "image": "tests/data/ts_raincoat.png",
+  "prompt": "Turn this photo into a loose watercolor painting on textured paper, keeping the composition."
+ },
+ {
+  "name": "e5_text_en",
+  "image": "tests/data/ts_sign.png",
+  "prompt": "Change the text on the sign to \"CLOSED SUNDAYS\". Keep the font style, sign and scene unchanged."
+ },
+ {
+  "name": "e6_text_zh",
+  "image": "tests/data/ts_poster.png",
+  "prompt": "把海报上的大字\"春季新品上市\"改为\"夏季特惠\"，小字改为\"满300减50\"，其他保持不变。"
+ },
+ {
+  "name": "e7_add",
+  "image": "tests/data/ts_room.png",
+  "prompt": "Add a large potted monstera plant in the empty corner by the window. Match the lighting and perspective."
+ },
+ {
+  "name": "e9_logo_flag",
+  "image": "tests/data/ts_logo.png",
+  "prompt": "Depict this logo as a flag waving in the sky. Keep the logo shapes and the text exactly as in the original."
+ }
+]
