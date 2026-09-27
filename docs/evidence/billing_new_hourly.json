@@ -1,0 +1,23 @@
+[
+ {
+  "amount": 0.19529295479878783,
+  "timeBilledMs": 638383,
+  "diskSpaceBilledGB": 120,
+  "endpointId": "btrcmfepllqgbf",
+  "time": "2026-09-27 17:00:00"
+ },
+ {
+  "amount": 0.3355771180940792,
+  "timeBilledMs": 1091813,
+  "diskSpaceBilledGB": 720,
+  "endpointId": "btrcmfepllqgbf",
+  "time": "2026-09-27 18:00:00"
+ },
+ {
+  "amount": 0.29143029666738585,
+  "timeBilledMs": 949984,
+  "diskSpaceBilledGB": 600,
+  "endpointId": "btrcmfepllqgbf",
+  "time": "2026-09-27 19:00:00"
+ }
+]

@@ -1,0 +1,2 @@
+v0.1.2 ghcr.io/rockycqu002/qwen-image-edit-4090:v0.1.2@sha256:42cc430dad40a1e36774c7649e8ee2f388cf18f2fb8275e737e9a3a4d7f3d143 layers=19 largest=8231300009 total_compressed=18984861763 built=run 36339362855
+v0.1.3 ghcr.io/rockycqu002/qwen-image-edit-4090:v0.1.3@sha256:5d03bef9387de3545d9a6a9747a6e99eb0dd73606c6c4cfdaf52f27b10b4e2ab layers=19 total_compressed=18984861923 built=run 36341654566
