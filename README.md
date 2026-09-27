@@ -38,7 +38,7 @@ The workflow summary shows the image digest, the model manifest and the lock fil
 A package first published from Actions is **private**. Either make it public once (GitHub → Packages →
 `qwen-image-edit-4090` → Package settings → Change visibility) or register a GHCR pull credential in RunPod
 (Credentials → Container Registry Auth) and pass its id to `deploy/runpod_api.py create --registry-auth <id>`.
-Use the digest-pinned reference `ghcr.io/<owner>/qwen-image-edit-4090:v0.1.0@sha256:...` for the template.
+Use the digest-pinned reference for the template, e.g. `ghcr.io/rockycqu002/qwen-image-edit-4090:v0.1.2@sha256:42cc430dad40a1e36774c7649e8ee2f388cf18f2fb8275e737e9a3a4d7f3d143` (19 layers, 19.0 GB compressed). To roll a new image: `python deploy/runpod_api.py template-update --template <id> --image <ref@digest>`.
 
 ## Endpoint settings (RunPod)
 

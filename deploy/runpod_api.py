@@ -80,6 +80,18 @@ def update(a):
     show(a)
 
 
+def template_update(a):
+    """Point the template at a new image digest and/or change disk / start command; RunPod rolls a new release."""
+    body = {}
+    if a.image: body["imageName"] = a.image
+    if a.disk is not None: body["containerDiskInGb"] = a.disk
+    if a.clear_start_cmd: body["dockerStartCmd"] = []          # back to the image's own CMD
+    if not body:
+        sys.exit("nothing to update")
+    t = call("PATCH", f"/templates/{a.template}", body)
+    print(json.dumps({k: t.get(k) for k in ("id", "name", "imageName", "containerDiskInGb", "dockerStartCmd", "dockerEntrypoint", "env")}, ensure_ascii=False, indent=1))
+
+
 def billing(a):
     """Per-endpoint billing buckets (worker seconds & cost); parameters per the v1 OpenAPI: startTime/endTime ISO-8601, bucketSize."""
     import datetime, urllib.parse
@@ -99,6 +111,8 @@ def main():
     u = sub.add_parser("update"); u.add_argument("--endpoint", required=True); u.add_argument("--max-workers", type=int); u.add_argument("--min-workers", type=int)
     u.add_argument("--timeout-ms", type=int); u.add_argument("--datacenters", nargs="*", help="'all' or a list of data center ids")
     u.add_argument("--allowed-cuda", nargs="*", help="explicit list of acceptable host CUDA versions, e.g. 13.0"); u.add_argument("--min-cuda"); u.set_defaults(fn=update)
+    t = sub.add_parser("template-update"); t.add_argument("--template", required=True); t.add_argument("--image"); t.add_argument("--disk", type=int)
+    t.add_argument("--clear-start-cmd", action="store_true"); t.set_defaults(fn=template_update)
     b = sub.add_parser("billing"); b.add_argument("--endpoint", required=True); b.add_argument("--days", type=int, default=1)
     b.add_argument("--bucket", default="hour", choices=["hour", "day", "week", "month"]); b.set_defaults(fn=billing)
     a = p.parse_args(); a.fn(a)
