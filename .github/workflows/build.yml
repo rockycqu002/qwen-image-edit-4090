@@ -88,11 +88,21 @@ jobs:
         run: |
           set -euo pipefail
           IMG="${{ steps.name.outputs.image }}@${{ steps.build.outputs.digest }}"
-          docker buildx imagetools inspect "$IMG" --format '{{json .Manifest}}' > manifest.json
-          LAYERS=$(python3 -c "import json;print(len(json.load(open('manifest.json'))['layers']))")
-          BIG=$(python3 -c "import json;print(max(l['size'] for l in json.load(open('manifest.json'))['layers']))")
-          TOTAL=$(python3 -c "import json;print(sum(l['size'] for l in json.load(open('manifest.json'))['layers']))")
-          echo "layers: $LAYERS largest: $BIG total: $TOTAL"; test "$LAYERS" -ge 8; test "$BIG" -lt 10000000000
+          # `imagetools inspect --raw` returns either a single manifest or an index; resolve to the amd64 manifest
+          docker buildx imagetools inspect "$IMG" --raw > raw.json
+          python3 - <<'PY'
+          import json, subprocess, sys
+          m = json.load(open("raw.json"))
+          if "manifests" in m:
+              d = next(x["digest"] for x in m["manifests"] if (x.get("platform") or {}).get("architecture", "amd64") == "amd64")
+              m = json.loads(subprocess.check_output(["docker", "buildx", "imagetools", "inspect", "${{ steps.name.outputs.image }}@" + d, "--raw"]))
+          json.dump(m, open("manifest.json", "w"))
+          layers = m["layers"]; big = max(l["size"] for l in layers); total = sum(l["size"] for l in layers)
+          print(f"layers: {len(layers)} largest: {big} total: {total}")
+          open("layers.txt", "w").write(f"{len(layers)} {big} {total}\n")
+          sys.exit(0 if len(layers) >= 8 and big < 10_000_000_000 else 1)
+          PY
+          read -r LAYERS BIG TOTAL < layers.txt
           {
             echo "## Image"; echo '```'
             echo "${{ steps.name.outputs.image }}:${{ steps.name.outputs.tag }}"
