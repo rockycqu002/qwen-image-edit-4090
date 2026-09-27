@@ -114,9 +114,11 @@ def decode_output(doc):
 def summarize(doc):
     """Flat, log-safe subset of a status document for CSV rows."""
     info = (doc.get("output") or {}).get("info") if isinstance(doc.get("output"), dict) else None
-    info = info or {}
+    if not isinstance(info, dict):        # the old FireRed endpoint returns info as a plain string
+        info = {"info_str": str(info)[:200]} if info else {}
     return {"job_id": doc.get("id"), "status": doc.get("status"), "delay_ms": doc.get("delayTime"), "exec_ms": doc.get("executionTime"),
             "worker_id": doc.get("workerId"), "wall_ms": doc.get("wall_ms"), "polls": doc.get("polls"), "finished_at": doc.get("finished_at"),
             "seed": info.get("seed"), "infer_ms": info.get("infer_ms"), "gpu": info.get("gpu"), "vram_used_mib": info.get("vram_used_mib"),
             "rss_mib": info.get("rss_mib"), "worker_jobs": info.get("worker_jobs"), "init_s": info.get("init_s"),
+            "build": info.get("build"), "comfy_args": info.get("comfy_args"),
             "error": str(doc.get("error", ""))[:200]}

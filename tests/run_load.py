@@ -21,7 +21,7 @@ PROMPTS = ["Change the background to a plain light blue wall. Keep the subject u
            "Make the box matte dark green. Keep everything else the same.",
            "Turn this into a watercolor painting, keeping the composition."]
 COLS = ["mode", "i", "submitted_at", "finished_at", "job_id", "worker_id", "status", "submit_ms", "delay_ms", "exec_ms", "wall_ms", "e2e_ms",
-        "out_bytes", "out_size", "seed", "infer_ms", "gpu", "init_s", "worker_jobs", "vram_used_mib", "rss_mib", "zero_workers_s", "since_last_done_s",
+        "out_bytes", "out_size", "seed", "infer_ms", "gpu", "init_s", "worker_jobs", "vram_used_mib", "rss_mib", "build", "comfy_args", "zero_workers_s", "since_last_done_s",
         "health_before", "health_after", "error"]
 
 
