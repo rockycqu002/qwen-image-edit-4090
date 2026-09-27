@@ -27,7 +27,7 @@ def key():
 
 def call(method, path, body=None):
     req = urllib.request.Request(REST + path, data=json.dumps(body).encode() if body is not None else None, method=method,
-                                 headers={"Authorization": f"Bearer {key()}", "Content-Type": "application/json"})
+                                 headers={"Authorization": f"Bearer {key()}", "Content-Type": "application/json", "User-Agent": "qwen-image-edit-deploy/1.0 (curl-compatible)"})
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
             return json.loads(r.read() or b"{}")

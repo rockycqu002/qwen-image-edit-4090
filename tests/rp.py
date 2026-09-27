@@ -22,7 +22,7 @@ def now_iso():
 
 
 def _req(method, url, body=None, timeout=30):
-    headers = {"Authorization": f"Bearer {api_key()}"}
+    headers = {"Authorization": f"Bearer {api_key()}", "User-Agent": "qwen-image-edit-tests/1.0"}   # Cloudflare (error 1010) rejects Python-urllib's default UA
     data = None
     if body is not None:
         data = json.dumps(body).encode(); headers["Content-Type"] = "application/json"
