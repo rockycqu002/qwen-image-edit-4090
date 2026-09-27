@@ -15,6 +15,9 @@ REST = "https://rest.runpod.io/v1"
 US_AND_IS2 = ["US-IL-1", "US-TX-3", "US-KS-2", "US-GA-2", "US-WA-1", "US-TX-1", "US-TX-4", "US-CA-2", "US-NC-1", "US-DE-1",
               "US-KS-3", "US-GA-1", "US-MD-1", "EUR-IS-2"]
 GPU = "NVIDIA GeForce RTX 4090"
+ALL_DCS = ["EU-RO-1", "CA-MTL-1", "EU-SE-1", "US-IL-1", "EUR-IS-1", "EU-CZ-1", "US-TX-3", "EUR-IS-2", "US-KS-2", "US-GA-2", "US-WA-1", "US-TX-1",
+           "CA-MTL-3", "EU-NL-1", "US-TX-4", "US-CA-2", "US-NC-1", "OC-AU-1", "US-DE-1", "EUR-IS-3", "CA-MTL-2", "AP-JP-1", "EUR-NO-1", "EU-FR-1",
+           "US-KS-3", "US-GA-1", "AP-IN-1", "US-MD-1"]
 OLD_ENDPOINT = "w2ww53ksg9wtj7"   # production FireRed endpoint: this script refuses to update it
 
 
@@ -68,6 +71,9 @@ def update(a):
     if a.max_workers is not None: body["workersMax"] = a.max_workers
     if a.min_workers is not None: body["workersMin"] = a.min_workers
     if a.timeout_ms is not None: body["executionTimeoutMs"] = a.timeout_ms
+    if a.datacenters: body["dataCenterIds"] = ALL_DCS if a.datacenters == ["all"] else a.datacenters
+    if a.allowed_cuda: body["allowedCudaVersions"] = a.allowed_cuda
+    if a.min_cuda: body["minCudaVersion"] = a.min_cuda
     if not body:
         sys.exit("nothing to update (an empty update would still trigger a rolling release)")
     print(json.dumps(call("PATCH", f"/endpoints/{a.endpoint}", body), ensure_ascii=False, indent=1))   # PATCH = in-place update
@@ -86,11 +92,13 @@ def billing(a):
 def main():
     p = argparse.ArgumentParser(); sub = p.add_subparsers(dest="cmd", required=True)
     c = sub.add_parser("create"); c.add_argument("--image", required=True); c.add_argument("--name", default="qwen-image-2p1-int8-4090")
-    c.add_argument("--max-workers", type=int, default=1); c.add_argument("--disk", type=int, default=20); c.add_argument("--steps", type=int, default=20)
+    # container disk must hold the UNCOMPRESSED image (~28 GB) plus /tmp scratch: 20 GB made every worker die at "start container" with no logs
+    c.add_argument("--max-workers", type=int, default=1); c.add_argument("--disk", type=int, default=50); c.add_argument("--steps", type=int, default=20)
     c.add_argument("--resolution", type=int, default=1024); c.add_argument("--registry-auth"); c.add_argument("--datacenters", nargs="*"); c.set_defaults(fn=create)
     s = sub.add_parser("show"); s.add_argument("--endpoint", required=True); s.set_defaults(fn=show)
     u = sub.add_parser("update"); u.add_argument("--endpoint", required=True); u.add_argument("--max-workers", type=int); u.add_argument("--min-workers", type=int)
-    u.add_argument("--timeout-ms", type=int); u.set_defaults(fn=update)
+    u.add_argument("--timeout-ms", type=int); u.add_argument("--datacenters", nargs="*", help="'all' or a list of data center ids")
+    u.add_argument("--allowed-cuda", nargs="*", help="explicit list of acceptable host CUDA versions, e.g. 13.0"); u.add_argument("--min-cuda"); u.set_defaults(fn=update)
     b = sub.add_parser("billing"); b.add_argument("--endpoint", required=True); b.add_argument("--days", type=int, default=1)
     b.add_argument("--bucket", default="hour", choices=["hour", "day", "week", "month"]); b.set_defaults(fn=billing)
     a = p.parse_args(); a.fn(a)

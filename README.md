@@ -44,7 +44,12 @@ Use the digest-pinned reference `ghcr.io/<owner>/qwen-image-edit-4090:v0.1.0@sha
 
 Queue-based · GPU `NVIDIA GeForce RTX 4090` only (pool ADA_24, minCudaVersion 13.0) · 1 GPU/worker ·
 workersMin 0 · idleTimeout 5 s · scaler REQUEST_COUNT/1 · FlashBoot on · executionTimeout 60 s ·
-env `QIE_STEPS=20 QIE_RESOLUTION=1024`.
+env `QIE_STEPS=20 QIE_RESOLUTION=1024` · **container disk 50 GB**.
+
+The container disk must hold the *uncompressed* image (~28 GB) plus `/tmp` scratch. With the 20 GB default every
+worker pulled the image, logged `start container` and died without a single line of container output (worker
+`unhealthy`, job stuck `IN_QUEUE`); a diagnostics-only probe on the same hosts (US-CA-2, driver 580.126.20 /
+CUDA 13.0, torch 2.14.0+cu130 → `cuda.is_available() == True`) succeeded as soon as the disk was 60 GB.
 
 ## Local checks
 
